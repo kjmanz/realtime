@@ -1,0 +1,13 @@
+{
+  "name": "honobono-chigai",
+  "version": "0.1.0",
+  "private": true,
+  "description": "同じ場所で遊ぶ、ほのぼの系リアルタイム会話ゲーム",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

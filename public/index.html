@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#fff8eb">
+  <meta name="description" content="3〜10人で遊べる、ほのぼの会話ゲーム">
+  <title>ことばの森</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="page-shell">
+    <header class="site-header">
+      <button class="brand" id="brandButton" type="button" aria-label="トップへ">
+        <span class="brand-mark" aria-hidden="true">🌱</span>
+        <span>ことばの森</span>
+      </button>
+      <div id="roomBadge" class="room-badge hidden"></div>
+    </header>
+    <main id="app" aria-live="polite"></main>
+    <footer class="site-footer">みんなで話して、ちがいを見つけよう</footer>
+  </div>
+  <div id="toast" class="toast" role="status" aria-live="assertive"></div>
+  <script src="/app.js" defer></script>
+</body>
+</html>
