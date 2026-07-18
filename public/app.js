@@ -7,8 +7,19 @@ const leaveRoomButton = document.querySelector('#leaveRoomButton');
 const brandButton = document.querySelector('#brandButton');
 const SESSION_KEY = 'kotobanomori-session';
 const NAME_KEY = 'kotobanomori-nickname';
+const DEVICE_KEY = 'kotobanomori-device-id';
+
+function loadDeviceId() {
+  let value = localStorage.getItem(DEVICE_KEY);
+  if (!value) {
+    value = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    localStorage.setItem(DEVICE_KEY, value);
+  }
+  return value;
+}
 
 let session = loadSession();
+const deviceId = loadDeviceId();
 let state = null;
 let eventSource = null;
 let topicRevealedRound = null;
@@ -83,7 +94,7 @@ async function recoverSession() {
     if (!name) throw Object.assign(new Error('ニックネームを入力して部屋へ戻ってください'), { status: 401 });
     const data = await request('/api/rooms/join', {
       method: 'POST',
-      body: JSON.stringify({ code: session.code, name })
+      body: JSON.stringify({ code: session.code, name, deviceId })
     });
     saveSession({ ...data, name });
     recovering = false;
@@ -180,7 +191,7 @@ function renderLanding(message = '') {
     setPending(true);
     try {
       const name = nicknameInput.value;
-      const data = await request('/api/rooms', { method: 'POST', body: JSON.stringify({ name }) });
+      const data = await request('/api/rooms', { method: 'POST', body: JSON.stringify({ name, deviceId }) });
       saveSession(data);
       connect();
     } catch (error) { showToast(error.message); setPending(false); }
@@ -195,7 +206,7 @@ function renderLanding(message = '') {
       const form = new FormData(event.currentTarget);
       const data = await request('/api/rooms/join', {
         method: 'POST',
-        body: JSON.stringify({ code: form.get('code'), name: form.get('name') })
+        body: JSON.stringify({ code: form.get('code'), name: form.get('name'), deviceId })
       });
       saveSession(data);
       connect();
@@ -299,12 +310,14 @@ function renderVote() {
   const me = state.players.find((player) => player.id === state.viewerId);
   const roundPlayers = state.players.filter((player) => player.active);
   const submittedCount = roundPlayers.filter((player) => player.submitted).length;
+  const pendingNames = roundPlayers.filter((player) => !player.submitted).map((player) => player.name);
   const required = state.minorityTotal;
   if (me.submitted) {
     app.innerHTML = `
       <section class="screen">
         <div class="screen-head"><span class="pill topic-reminder">ラウンド ${state.roundNumber}<strong>あなたのお題：${escapeHtml(state.ownTopic)}</strong></span><h2>予想を受け付けました</h2><p>${submittedCount} / ${roundPlayers.length}人が予想済みです。</p></div>
         <section class="card"><div class="player-list">${playerRows(roundPlayers, 'vote')}</div></section>
+        ${pendingNames.length ? `<p class="fine-print">まだ予想中：${pendingNames.map(escapeHtml).join('、')}</p>` : '<p class="fine-print">全員の予想がそろいました</p>'}
         <button class="button secondary" id="editVote">選び直す</button>
         ${state.isHost
           ? `<button class="button" id="revealResults" ${submittedCount === roundPlayers.length ? '' : 'disabled'}>結果を発表</button>`

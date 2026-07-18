@@ -28,9 +28,14 @@ function normalizeName(value) {
   return String(value || '').trim().replace(/\s+/g, ' ').slice(0, 10);
 }
 
-function createPlayer(name, isHost = false) {
+function normalizeDeviceId(value) {
+  const id = String(value || '').trim().slice(0, 80);
+  return /^[a-zA-Z0-9_-]{8,80}$/.test(id) ? id : '';
+}
+
+function createPlayer(name, isHost = false, deviceId = '') {
   return {
-    id: randomId(8), token: randomId(18), name, isHost,
+    id: randomId(8), token: randomId(18), name, isHost, deviceId,
     ready: false, submitted: false, votes: [], minorityCount: 0, waiting: false
   };
 }
@@ -353,9 +358,10 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && pathname === '/api/rooms') {
       const body = await readJson(req);
       const name = normalizeName(body.name);
+      const deviceId = normalizeDeviceId(body.deviceId);
       if (name.length < 2) return json(res, 400, { error: 'ニックネームを2文字以上で入力してください' });
       const code = createRoomCode();
-      const host = createPlayer(name, true);
+      const host = createPlayer(name, true, deviceId);
       const room = {
         code, players: [host], clients: new Set(), phase: 'lobby', round: null,
         roundNumber: 0, recentPairKeys: [], lastCategory: null, lastMinorityIds: [],
@@ -369,11 +375,17 @@ const server = http.createServer(async (req, res) => {
       const body = await readJson(req);
       const code = String(body.code || '').replace(/\D/g, '').slice(0, 4);
       const name = normalizeName(body.name);
+      const deviceId = normalizeDeviceId(body.deviceId);
       const room = rooms.get(code);
       if (!room || room.phase === 'ended') return json(res, 404, { error: '部屋が見つかりません' });
       if (name.length < 2) return json(res, 400, { error: 'ニックネームを2文字以上で入力してください' });
-      const existing = room.players.find((player) => player.name === name);
+      const existingByDevice = deviceId && room.players.find((player) => player.deviceId === deviceId);
+      const existing = existingByDevice || room.players.find((player) => player.name === name);
       if (existing) {
+        if (deviceId) existing.deviceId = deviceId;
+        if (existingByDevice && existing.name !== name && !room.players.some((player) => player !== existing && player.name === name)) {
+          existing.name = name;
+        }
         for (const client of [...room.clients]) {
           if (client.playerId === existing.id) {
             client.res.end();
@@ -385,7 +397,7 @@ const server = http.createServer(async (req, res) => {
         return json(res, 200, { code, playerId: existing.id, token: existing.token, name: existing.name, resumed: true });
       }
       if (room.players.length >= 20) return json(res, 409, { error: 'この部屋は満員です' });
-      const player = createPlayer(name);
+      const player = createPlayer(name, false, deviceId);
       player.waiting = room.phase !== 'lobby';
       room.players.push(player);
       sendEvent(room);
