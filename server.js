@@ -4,7 +4,7 @@ const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
-const { TOPIC_PAIRS } = require('./topics');
+const { TOPIC_PAIRS, CATEGORY_QUESTIONS } = require('./topics');
 
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -69,6 +69,7 @@ function roomPublicState(room, viewer) {
     question: round && room.phase === 'talk' ? round.questions[round.questionIndex] : null,
     questionIndex: round ? round.questionIndex : 0,
     questionTotal: round ? round.questions.length : 0,
+    questionCount: room.questionCount,
     minorityTotal: round && !isWaiting && ['vote', 'results'].includes(room.phase) ? round.minorityIds.length : null,
     results: isResults && !isWaiting ? buildResults(room) : null,
     createdAt: room.createdAt
@@ -104,12 +105,14 @@ function sendEvent(room) {
 function maxMinorities(playerCount) {
   if (playerCount <= 5) return 1;
   if (playerCount <= 8) return 2;
-  return 3;
+  if (playerCount <= 12) return 3;
+  if (playerCount <= 16) return 4;
+  return 5;
 }
 
 function chooseMinorityTotal(playerCount) {
   const max = maxMinorities(playerCount);
-  const weights = [0.4, 0.35, 0.25].slice(0, max);
+  const weights = [0.34, 0.27, 0.2, 0.12, 0.07].slice(0, max);
   const total = weights.reduce((sum, weight) => sum + weight, 0);
   let roll = Math.random() * total;
   for (let i = 0; i < weights.length; i += 1) {
@@ -142,8 +145,12 @@ function selectTopicPair(room) {
 }
 
 function pickQuestions(pair, count = 3) {
-  const groups = [pair.questions.slice(0, 2), pair.questions.slice(2, 4), pair.questions.slice(4)];
-  return groups.slice(0, count).map((group) => group[crypto.randomInt(group.length)]);
+  const pool = [...pair.questions, ...(CATEGORY_QUESTIONS[pair.category] || [])];
+  for (let index = pool.length - 1; index > 0; index -= 1) {
+    const swapIndex = crypto.randomInt(index + 1);
+    [pool[index], pool[swapIndex]] = [pool[swapIndex], pool[index]];
+  }
+  return pool.slice(0, count);
 }
 
 function prepareRound(room) {
@@ -160,13 +167,15 @@ function prepareRound(room) {
   for (const player of minorityPlayers) player.minorityCount += 1;
   room.lastMinorityIds = minorityPlayers.map((player) => player.id);
   room.roundNumber += 1;
+  const questionPool = pickQuestions(pair, 10);
   room.round = {
     category: pair.category,
     majorityTopic: swap ? pair.b : pair.a,
     minorityTopic: swap ? pair.a : pair.b,
     minorityIds: room.lastMinorityIds,
     activePlayerIds: room.players.map((player) => player.id),
-    questions: pickQuestions(pair),
+    questionPool,
+    questions: questionPool.slice(0, room.questionCount),
     questionIndex: 0
   };
   room.phase = 'topic';
@@ -207,6 +216,14 @@ function handleAction(room, player, action, payload) {
       if (room.players.length < 3) throw new Error('3人以上集まると開始できます');
       prepareRound(room);
       break;
+    case 'set_question_count': {
+      requireHost(player);
+      if (!['lobby', 'results'].includes(room.phase)) throw new Error('次のラウンドの前に変更してください');
+      const count = Number(payload.count);
+      if (!Number.isInteger(count) || count < 3 || count > 10) throw new Error('質問は3〜10問で選んでください');
+      room.questionCount = count;
+      break;
+    }
     case 'ready':
       if (room.phase !== 'topic') throw new Error('今は準備確認できません');
       if (player.waiting) throw new Error('次のラウンドから参加できます');
@@ -223,6 +240,13 @@ function handleAction(room, player, action, payload) {
       if (room.phase !== 'talk') throw new Error('今は質問を進められません');
       if (room.round.questionIndex >= room.round.questions.length - 1) throw new Error('最後の質問です');
       room.round.questionIndex += 1;
+      break;
+    case 'add_question':
+      requireHost(player);
+      if (room.phase !== 'talk') throw new Error('会話中に追加してください');
+      if (room.round.questions.length >= 10) throw new Error('質問は最大10問です');
+      room.round.questions.push(room.round.questionPool[room.round.questions.length]);
+      room.questionCount = room.round.questions.length;
       break;
     case 'start_vote':
       requireHost(player);
@@ -281,7 +305,7 @@ const server = http.createServer(async (req, res) => {
       const code = createRoomCode();
       const host = createPlayer(name, true);
       const room = {
-        code, players: [host], clients: new Set(), phase: 'lobby', round: null,
+        code, players: [host], clients: new Set(), phase: 'lobby', round: null, questionCount: 3,
         roundNumber: 0, recentPairKeys: [], lastCategory: null, lastMinorityIds: [],
         createdAt: Date.now(), updatedAt: Date.now()
       };
@@ -308,7 +332,7 @@ const server = http.createServer(async (req, res) => {
         sendEvent(room);
         return json(res, 200, { code, playerId: existing.id, token: existing.token, name: existing.name, resumed: true });
       }
-      if (room.players.length >= 10) return json(res, 409, { error: 'この部屋は満員です' });
+      if (room.players.length >= 20) return json(res, 409, { error: 'この部屋は満員です' });
       const player = createPlayer(name);
       player.waiting = room.phase !== 'lobby';
       room.players.push(player);

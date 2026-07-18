@@ -148,8 +148,8 @@ h3 { margin: 0; font-size: 18px; }
 .topic-word { margin: 16px 0 8px; font-size: clamp(34px, 11vw, 54px); line-height: 1.2; font-weight: 950; letter-spacing: -.03em; }
 .private-note { color: var(--muted); font-size: 13px; margin: 0; }
 
-.progress { display: flex; gap: 7px; justify-content: center; }
-.progress-dot { width: 34px; height: 6px; border-radius: 999px; background: var(--line); }
+.progress { display: grid; grid-template-columns: repeat(var(--question-total), minmax(10px, 34px)); gap: 7px; justify-content: center; }
+.progress-dot { width: 100%; height: 6px; border-radius: 999px; background: var(--line); }
 .progress-dot.active { background: var(--orange); }
 .question-card { min-height: 220px; display: grid; align-content: center; text-align: center; background: linear-gradient(145deg, #fff6e6, #fffdf7); }
 .question-number { margin: 0 0 12px; color: #9a6638; font-size: 13px; font-weight: 850; letter-spacing: .08em; }
@@ -188,6 +188,12 @@ h3 { margin: 0; font-size: 18px; }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 .site-footer { text-align: center; color: #8b968e; font-size: 12px; padding: 20px 0 24px; }
 .fine-print { margin: 0; color: var(--muted); text-align: center; font-size: 12px; line-height: 1.6; }
+.question-setting { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 13px 14px; border: 1px solid var(--line); border-radius: 15px; background: var(--green-soft); }
+.question-setting > div:first-child { display: grid; gap: 2px; }
+.question-setting small { color: var(--muted); font-size: 11px; }
+.question-stepper { display: grid; grid-template-columns: 38px 54px 38px; align-items: center; text-align: center; }
+.question-stepper button { width: 38px; height: 38px; border: 0; border-radius: 50%; background: #fff; color: var(--green-dark); font-size: 23px; font-weight: 900; box-shadow: inset 0 0 0 1px var(--line); }
+.question-stepper button:disabled { opacity: .35; }
 
 @media (max-width: 430px) {
   .page-shell { padding-left: 14px; padding-right: 14px; }

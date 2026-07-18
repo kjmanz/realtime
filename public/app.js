@@ -144,7 +144,7 @@ function renderLanding(message = '') {
   setRoomBadge(null);
   app.innerHTML = `
     <section class="hero">
-      <p class="eyebrow">3〜10人で遊べる会話ゲーム</p>
+      <p class="eyebrow">3〜20人で遊べる会話ゲーム</p>
       <h1>同じことば？<br>ちがうことば？</h1>
       <p class="lead">みんなのお題は、ほとんど同じ。自由に話して、少しだけ違うお題の人を見つけよう。</p>
     </section>
@@ -210,6 +210,24 @@ function playerRows(players, mode = '') {
     </div>`).join('');
 }
 
+function questionCountSetting() {
+  return `
+    <div class="question-setting">
+      <div><strong>質問の数</strong><small>3〜10問</small></div>
+      <div class="question-stepper">
+        <button type="button" data-question-count="${state.questionCount - 1}" ${state.questionCount <= 3 ? 'disabled' : ''} aria-label="質問を1問減らす">−</button>
+        <strong>${state.questionCount}問</strong>
+        <button type="button" data-question-count="${state.questionCount + 1}" ${state.questionCount >= 10 ? 'disabled' : ''} aria-label="質問を1問増やす">＋</button>
+      </div>
+    </div>`;
+}
+
+function bindQuestionCountSetting() {
+  document.querySelectorAll('[data-question-count]').forEach((button) => button.addEventListener('click', () => {
+    sendAction('set_question_count', { count: Number(button.dataset.questionCount) });
+  }));
+}
+
 function renderLobby() {
   const canStart = state.players.length >= 3;
   app.innerHTML = `
@@ -218,13 +236,15 @@ function renderLobby() {
       <div class="room-code-panel"><p>部屋コード</p><strong class="big-code">${state.code}</strong></div>
       <section class="card stack">
         <div class="player-list">${playerRows(state.players)}</div>
-        <p class="fine-print">${state.players.length} / 10人　・　3人から開始できます</p>
+        <p class="fine-print">${state.players.length} / 20人　・　3人から開始できます</p>
+        ${state.isHost ? questionCountSetting() : `<p class="fine-print">質問は${state.questionCount}問です</p>`}
         ${state.isHost
           ? `<button class="button" id="startRound" ${canStart ? '' : 'disabled'}>最初のラウンドへ</button>`
           : '<div class="waiting"><div class="dots"><i></i><i></i><i></i></div><span>進行役が始めるのを待っています</span></div>'}
       </section>
     </section>`;
   document.querySelector('#startRound')?.addEventListener('click', () => sendAction('start_round'));
+  bindQuestionCountSetting();
 }
 
 function renderTopic() {
@@ -277,17 +297,19 @@ function renderTalk() {
   app.innerHTML = `
     <section class="screen">
       <div class="screen-head"><span class="pill topic-reminder">ラウンド ${state.roundNumber}<strong>あなたのお題：${escapeHtml(state.ownTopic)}</strong></span><h2>自由に話そう</h2><p>お題そのものは言わずに、質問について話してください。</p></div>
-      <div class="progress">${Array.from({ length: state.questionTotal }, (_, index) => `<i class="progress-dot ${index <= state.questionIndex ? 'active' : ''}"></i>`).join('')}</div>
+      <div class="progress" style="--question-total:${state.questionTotal}">${Array.from({ length: state.questionTotal }, (_, index) => `<i class="progress-dot ${index <= state.questionIndex ? 'active' : ''}"></i>`).join('')}</div>
       <section class="card question-card">
         <p class="question-number">質問 ${state.questionIndex + 1} / ${state.questionTotal}</p>
         <p class="question">${escapeHtml(state.question)}</p>
       </section>
       <p class="hint">順番はありません。気になったことを聞き合ってみよう。</p>
+      ${state.isHost && state.questionTotal < 10 ? '<button class="button secondary" id="addQuestion">質問を1問追加する</button>' : ''}
       ${state.isHost
         ? `<button class="button ${last ? 'secondary' : ''}" id="advanceTalk">${last ? '予想タイムへ' : '次の質問へ'}</button>`
         : '<div class="waiting"><div class="dots"><i></i><i></i><i></i></div><span>進行役が次へ進めます</span></div>'}
     </section>`;
   document.querySelector('#advanceTalk')?.addEventListener('click', () => sendAction(last ? 'start_vote' : 'next_question'));
+  document.querySelector('#addQuestion')?.addEventListener('click', () => sendAction('add_question'));
 }
 
 function renderVote() {
@@ -354,11 +376,13 @@ function renderResults() {
       </section>
       <p class="hint">どの言葉が怪しく聞こえたか、みんなで話してみよう。</p>
       ${state.isHost ? `
+        ${questionCountSetting()}
         <button class="button" id="nextRound">次のラウンドへ</button>
         <button class="button danger" id="endRoom">ゲームを終了</button>`
         : '<div class="waiting"><div class="dots"><i></i><i></i><i></i></div><span>進行役が次のラウンドへ進めます</span></div>'}
     </section>`;
   document.querySelector('#nextRound')?.addEventListener('click', () => { topicRevealedRound = null; sendAction('start_round'); });
+  bindQuestionCountSetting();
   document.querySelector('#endRoom')?.addEventListener('click', () => {
     if (confirm('この部屋を終了しますか？')) sendAction('end_room');
   });
