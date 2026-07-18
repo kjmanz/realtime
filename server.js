@@ -102,6 +102,51 @@ function sendEvent(room) {
   }
 }
 
+function removePlayer(room, player) {
+  for (const client of [...room.clients]) {
+    if (client.playerId === player.id) {
+      client.res.end();
+      room.clients.delete(client);
+    }
+  }
+
+  room.players = room.players.filter((candidate) => candidate.id !== player.id);
+  if (!room.players.length) {
+    rooms.delete(room.code);
+    return true;
+  }
+
+  if (room.round) {
+    room.round.activePlayerIds = room.round.activePlayerIds.filter((id) => id !== player.id);
+    room.round.minorityIds = room.round.minorityIds.filter((id) => id !== player.id);
+    room.lastMinorityIds = room.lastMinorityIds.filter((id) => id !== player.id);
+    for (const candidate of room.players) candidate.votes = candidate.votes.filter((id) => id !== player.id);
+
+    if (!room.round.activePlayerIds.length) {
+      room.phase = 'lobby';
+      room.round = null;
+      for (const candidate of room.players) {
+        candidate.waiting = false;
+        candidate.ready = false;
+        candidate.submitted = false;
+        candidate.votes = [];
+      }
+    } else if (room.phase === 'vote') {
+      for (const candidate of activePlayers(room)) {
+        candidate.submitted = false;
+        candidate.votes = [];
+      }
+    }
+  }
+
+  if (player.isHost) {
+    const nextHost = activePlayers(room)[0] || room.players[0];
+    nextHost.isHost = true;
+  }
+  sendEvent(room);
+  return false;
+}
+
 function maxMinorities(playerCount) {
   if (playerCount <= 5) return 1;
   if (playerCount <= 8) return 2;
@@ -365,6 +410,10 @@ const server = http.createServer(async (req, res) => {
       const body = await readJson(req);
       const player = room && authenticate(room, body.playerId, body.token);
       if (!room || !player) return json(res, 401, { error: '参加情報が確認できません' });
+      if (body.action === 'leave_room') {
+        const roomClosed = removePlayer(room, player);
+        return json(res, 200, { ok: true, roomClosed });
+      }
       handleAction(room, player, body.action, body.payload || {});
       return json(res, 200, { ok: true });
     }

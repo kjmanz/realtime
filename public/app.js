@@ -3,6 +3,7 @@
 const app = document.querySelector('#app');
 const toast = document.querySelector('#toast');
 const roomBadge = document.querySelector('#roomBadge');
+const leaveRoomButton = document.querySelector('#leaveRoomButton');
 const brandButton = document.querySelector('#brandButton');
 const SESSION_KEY = 'kotobanomori-session';
 const NAME_KEY = 'kotobanomori-nickname';
@@ -111,7 +112,8 @@ function connect() {
   eventSource = new EventSource(`/api/rooms/${session.code}/events?${query}`);
   eventSource.addEventListener('state', (event) => {
     const next = JSON.parse(event.data);
-    if (!state || next.roundNumber !== state.roundNumber || next.phase !== state.phase) selectedVotes = new Set();
+    if (!state || next.roundNumber !== state.roundNumber || next.phase !== state.phase
+      || next.players.length !== state.players.length || next.minorityTotal !== state.minorityTotal) selectedVotes = new Set();
     state = next;
     const me = next.players.find((player) => player.id === next.viewerId);
     if (me && session && session.name !== me.name) saveSession({ ...session, name: me.name });
@@ -138,6 +140,7 @@ async function sendAction(action, payload = {}) {
 function setRoomBadge(code) {
   roomBadge.textContent = code ? `部屋 ${code}` : '';
   roomBadge.classList.toggle('hidden', !code);
+  leaveRoomButton.classList.toggle('hidden', !code);
 }
 
 function renderLanding(message = '') {
@@ -406,6 +409,24 @@ function leaveSession() {
   renderLanding();
 }
 
+async function exitRoom() {
+  if (!session || !state) return leaveSession();
+  const message = state.isHost
+    ? '部屋を退出しますか？ 進行役は残っている人に引き継がれます。'
+    : '部屋を退出しますか？';
+  if (!confirm(message)) return;
+  try {
+    await request(`/api/rooms/${session.code}/action`, {
+      method: 'POST',
+      body: JSON.stringify({ playerId: session.playerId, token: session.token, action: 'leave_room', payload: {} })
+    });
+    leaveSession();
+  } catch (error) {
+    if (error.status === 401 || error.status === 404) leaveSession();
+    else showToast(error.message);
+  }
+}
+
 function render() {
   if (!state) return renderLanding();
   setRoomBadge(state.code);
@@ -426,5 +447,7 @@ brandButton.addEventListener('click', () => {
   if (state?.phase === 'ended') return leaveSession();
   showToast('ゲーム中は部屋に参加しています');
 });
+
+leaveRoomButton.addEventListener('click', exitRoom);
 
 if (session) connect(); else renderLanding();

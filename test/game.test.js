@@ -185,3 +185,23 @@ test('1部屋に20人まで参加できる', async () => {
   assert.equal(rooms.get(code).players.length, 20);
   await assert.rejects(post('/api/rooms/join', { code, name: '二十一人目' }), /満員/);
 });
+
+test('退出すると参加者から外れ、進行役を引き継ぎ、最後なら部屋を閉じる', async () => {
+  const host = await post('/api/rooms', { name: '退出進行' });
+  const code = host.code;
+  const guest1 = await post('/api/rooms/join', { code, name: '引継一' });
+  const guest2 = await post('/api/rooms/join', { code, name: '引継二' });
+  const room = rooms.get(code);
+
+  await action(code, host, 'start_round');
+  await action(code, host, 'leave_room');
+  assert.equal(room.players.length, 2);
+  assert.equal(room.players.some((player) => player.id === host.playerId), false);
+  assert.equal(room.round.activePlayerIds.includes(host.playerId), false);
+  assert.equal(room.players.find((player) => player.id === guest1.playerId).isHost, true);
+
+  await action(code, guest1, 'leave_room');
+  assert.equal(room.players.find((player) => player.id === guest2.playerId).isHost, true);
+  await action(code, guest2, 'leave_room');
+  assert.equal(rooms.has(code), false);
+});

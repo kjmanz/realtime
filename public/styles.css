@@ -60,7 +60,9 @@ button { -webkit-tap-highlight-color: transparent; }
 }
 
 .brand-mark { font-size: 24px; }
+.header-actions { display: flex; align-items: center; gap: 7px; }
 .room-badge { background: var(--paper); border: 1px solid var(--line); border-radius: 999px; padding: 7px 12px; font-weight: 800; letter-spacing: .12em; }
+.leave-room-button { border: 1px solid #e5c7bd; border-radius: 999px; padding: 7px 10px; background: #fff7f3; color: #9b4c3d; font-weight: 800; }
 .hidden { display: none !important; }
 main { flex: 1; width: 100%; }
 
