@@ -305,11 +305,16 @@ function renderVote() {
       <section class="screen">
         <div class="screen-head"><span class="pill topic-reminder">ラウンド ${state.roundNumber}<strong>あなたのお題：${escapeHtml(state.ownTopic)}</strong></span><h2>予想を受け付けました</h2><p>${submittedCount} / ${roundPlayers.length}人が予想済みです。</p></div>
         <section class="card"><div class="player-list">${playerRows(roundPlayers, 'vote')}</div></section>
+        <button class="button secondary" id="editVote">選び直す</button>
         ${state.isHost
           ? `<button class="button" id="revealResults" ${submittedCount === roundPlayers.length ? '' : 'disabled'}>結果を発表</button>`
           : '<div class="waiting"><div class="dots"><i></i><i></i><i></i></div><span>みんなの予想を待っています</span></div>'}
       </section>`;
     document.querySelector('#revealResults')?.addEventListener('click', () => sendAction('reveal_results'));
+    document.querySelector('#editVote')?.addEventListener('click', () => {
+      selectedVotes = new Set(state.ownVotes || []);
+      sendAction('reopen_vote');
+    });
     return;
   }
 
@@ -320,7 +325,7 @@ function renderVote() {
         <span class="count-number">${required}</span>
         <span class="count-label">人います！</span>
       </section>
-      <p class="selection-note">違うお題だと思う人を${required}人選んでください。自分も選べます。</p>
+      <p class="selection-note">違うお題だと思う人を${required}人選んでください。自分も選べます。人数いっぱいのときは、別の人を押すと入れ替わります。</p>
       <div class="select-grid">
         ${roundPlayers.map((player) => `<button class="person-select ${selectedVotes.has(player.id) ? 'selected' : ''}" data-player-id="${player.id}">${escapeHtml(player.name)}${player.id === state.viewerId ? '<br><small>あなた</small>' : ''}</button>`).join('')}
       </div>
@@ -330,7 +335,11 @@ function renderVote() {
     const id = button.dataset.playerId;
     if (selectedVotes.has(id)) selectedVotes.delete(id);
     else if (selectedVotes.size < required) selectedVotes.add(id);
-    else showToast(`${required}人まで選べます`);
+    else {
+      const [oldestId] = selectedVotes;
+      selectedVotes.delete(oldestId);
+      selectedVotes.add(id);
+    }
     renderVote();
   }));
   document.querySelector('#submitVote')?.addEventListener('click', () => sendAction('submit_vote', { ids: [...selectedVotes] }));

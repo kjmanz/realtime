@@ -107,6 +107,11 @@ test('少数派人数と違う人数は選択できない', async () => {
     /1人選んでください/
   );
   await action(code, guest2, 'submit_vote', { ids: [rooms.get(code).players[0].id] });
+  assert.equal(rooms.get(code).players.find((player) => player.id === guest2.playerId).submitted, true);
+  await action(code, guest2, 'reopen_vote');
+  assert.equal(rooms.get(code).players.find((player) => player.id === guest2.playerId).submitted, false);
+  assert.deepEqual(rooms.get(code).players.find((player) => player.id === guest2.playerId).votes, []);
+  await action(code, guest2, 'submit_vote', { ids: [rooms.get(code).players[1].id] });
 });
 
 test('同じ名前で席に戻り、途中参加者は次のラウンドから遊べる', async () => {

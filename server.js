@@ -70,6 +70,7 @@ function roomPublicState(room, viewer) {
     questionIndex: round ? round.questionIndex : 0,
     questionTotal: round ? round.questions.length : 0,
     minorityTotal: round && !isWaiting && ['vote', 'results'].includes(room.phase) ? round.minorityIds.length : null,
+    ownVotes: round && room.phase === 'vote' && !isWaiting ? viewer.votes : [],
     results: isResults && !isWaiting ? buildResults(room) : null,
     createdAt: room.createdAt
   };
@@ -289,6 +290,12 @@ function handleAction(room, player, action, payload) {
       requireHost(player);
       if (room.phase !== 'talk') throw new Error('今は予想タイムへ進めません');
       room.phase = 'vote';
+      break;
+    case 'reopen_vote':
+      if (room.phase !== 'vote') throw new Error('今は選び直せません');
+      if (player.waiting) throw new Error('次のラウンドから参加できます');
+      player.votes = [];
+      player.submitted = false;
       break;
     case 'submit_vote': {
       if (room.phase !== 'vote') throw new Error('今は予想できません');
