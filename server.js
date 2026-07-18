@@ -244,6 +244,7 @@ function handleAction(room, player, action, payload) {
     case 'add_question':
       requireHost(player);
       if (room.phase !== 'talk') throw new Error('会話中に追加してください');
+      if (room.round.questionIndex !== room.round.questions.length - 1) throw new Error('最後の質問まで進んでから追加してください');
       if (room.round.questions.length >= 10) throw new Error('質問は最大10問です');
       room.round.questions.push(room.round.questionPool[room.round.questions.length]);
       room.questionCount = room.round.questions.length;

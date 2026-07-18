@@ -162,7 +162,13 @@ test('進行役が質問を最大10問まで設定・追加できる', async () 
 
   for (const player of [host, guest1, guest2]) await action(code, player, 'ready');
   await action(code, host, 'start_talk');
-  for (let index = 0; index < 7; index += 1) await action(code, host, 'add_question');
+  await assert.rejects(action(code, host, 'add_question'), /最後の質問/);
+  await action(code, host, 'next_question');
+  await action(code, host, 'next_question');
+  for (let index = 0; index < 7; index += 1) {
+    await action(code, host, 'add_question');
+    await action(code, host, 'next_question');
+  }
 
   assert.equal(room.round.questions.length, 10);
   assert.equal(new Set(room.round.questions).size, 10);

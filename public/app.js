@@ -303,7 +303,7 @@ function renderTalk() {
         <p class="question">${escapeHtml(state.question)}</p>
       </section>
       <p class="hint">順番はありません。気になったことを聞き合ってみよう。</p>
-      ${state.isHost && state.questionTotal < 10 ? '<button class="button secondary" id="addQuestion">質問を1問追加する</button>' : ''}
+      ${state.isHost && last && state.questionTotal < 10 ? '<button class="button secondary" id="addQuestion">質問を1問追加する</button>' : ''}
       ${state.isHost
         ? `<button class="button ${last ? 'secondary' : ''}" id="advanceTalk">${last ? '予想タイムへ' : '次の質問へ'}</button>`
         : '<div class="waiting"><div class="dots"><i></i><i></i><i></i></div><span>進行役が次へ進めます</span></div>'}
