@@ -69,7 +69,6 @@ function roomPublicState(room, viewer) {
     question: round && room.phase === 'talk' ? round.questions[round.questionIndex] : null,
     questionIndex: round ? round.questionIndex : 0,
     questionTotal: round ? round.questions.length : 0,
-    questionCount: room.questionCount,
     minorityTotal: round && !isWaiting && ['vote', 'results'].includes(room.phase) ? round.minorityIds.length : null,
     results: isResults && !isWaiting ? buildResults(room) : null,
     createdAt: room.createdAt
@@ -220,7 +219,7 @@ function prepareRound(room) {
     minorityIds: room.lastMinorityIds,
     activePlayerIds: room.players.map((player) => player.id),
     questionPool,
-    questions: questionPool.slice(0, room.questionCount),
+    questions: questionPool.slice(0, 3),
     questionIndex: 0
   };
   room.phase = 'topic';
@@ -261,14 +260,6 @@ function handleAction(room, player, action, payload) {
       if (room.players.length < 3) throw new Error('3人以上集まると開始できます');
       prepareRound(room);
       break;
-    case 'set_question_count': {
-      requireHost(player);
-      if (!['lobby', 'results'].includes(room.phase)) throw new Error('次のラウンドの前に変更してください');
-      const count = Number(payload.count);
-      if (!Number.isInteger(count) || count < 3 || count > 10) throw new Error('質問は3〜10問で選んでください');
-      room.questionCount = count;
-      break;
-    }
     case 'ready':
       if (room.phase !== 'topic') throw new Error('今は準備確認できません');
       if (player.waiting) throw new Error('次のラウンドから参加できます');
@@ -292,7 +283,6 @@ function handleAction(room, player, action, payload) {
       if (room.round.questionIndex !== room.round.questions.length - 1) throw new Error('最後の質問まで進んでから追加してください');
       if (room.round.questions.length >= 10) throw new Error('質問は最大10問です');
       room.round.questions.push(room.round.questionPool[room.round.questions.length]);
-      room.questionCount = room.round.questions.length;
       break;
     case 'start_vote':
       requireHost(player);
@@ -351,7 +341,7 @@ const server = http.createServer(async (req, res) => {
       const code = createRoomCode();
       const host = createPlayer(name, true);
       const room = {
-        code, players: [host], clients: new Set(), phase: 'lobby', round: null, questionCount: 3,
+        code, players: [host], clients: new Set(), phase: 'lobby', round: null,
         roundNumber: 0, recentPairKeys: [], lastCategory: null, lastMinorityIds: [],
         createdAt: Date.now(), updatedAt: Date.now()
       };
