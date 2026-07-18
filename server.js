@@ -283,6 +283,7 @@ function handleAction(room, player, action, payload) {
       if (room.round.questionIndex !== room.round.questions.length - 1) throw new Error('最後の質問まで進んでから追加してください');
       if (room.round.questions.length >= 10) throw new Error('質問は最大10問です');
       room.round.questions.push(room.round.questionPool[room.round.questions.length]);
+      room.round.questionIndex += 1;
       break;
     case 'start_vote':
       requireHost(player);
