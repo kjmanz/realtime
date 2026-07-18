@@ -5,6 +5,7 @@ const toast = document.querySelector('#toast');
 const roomBadge = document.querySelector('#roomBadge');
 const brandButton = document.querySelector('#brandButton');
 const SESSION_KEY = 'kotobanomori-session';
+const NAME_KEY = 'kotobanomori-nickname';
 
 let session = loadSession();
 let state = null;
@@ -12,6 +13,8 @@ let eventSource = null;
 let topicRevealedRound = null;
 let selectedVotes = new Set();
 let toastTimer = null;
+let reconnectTimer = null;
+let recovering = false;
 
 const avatars = ['🌿', '🍀', '🌼', '🌙', '🍎', '🐿️', '🌈', '⭐', '🍊', '🪴'];
 
@@ -25,8 +28,15 @@ function loadSession() {
 
 function saveSession(value) {
   session = value;
-  if (value) localStorage.setItem(SESSION_KEY, JSON.stringify(value));
+  if (value) {
+    localStorage.setItem(SESSION_KEY, JSON.stringify(value));
+    if (value.name) localStorage.setItem(NAME_KEY, value.name);
+  }
   else localStorage.removeItem(SESSION_KEY);
+}
+
+function savedNickname() {
+  return session?.name || localStorage.getItem(NAME_KEY) || '';
 }
 
 function showToast(message) {
@@ -42,13 +52,56 @@ async function request(url, options = {}) {
     headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }
   });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || '通信に失敗しました');
+  if (!response.ok) {
+    const error = new Error(data.error || '通信に失敗しました');
+    error.status = response.status;
+    throw error;
+  }
   return data;
 }
 
 function disconnect() {
   if (eventSource) eventSource.close();
   eventSource = null;
+  clearTimeout(reconnectTimer);
+  reconnectTimer = null;
+}
+
+function scheduleReconnect() {
+  if (!session || reconnectTimer || recovering) return;
+  showToast('部屋へ再接続しています…');
+  reconnectTimer = setTimeout(recoverSession, 1500);
+}
+
+async function recoverSession() {
+  reconnectTimer = null;
+  if (!session || recovering) return;
+  recovering = true;
+  try {
+    const name = savedNickname();
+    if (!name) throw Object.assign(new Error('ニックネームを入力して部屋へ戻ってください'), { status: 401 });
+    const data = await request('/api/rooms/join', {
+      method: 'POST',
+      body: JSON.stringify({ code: session.code, name })
+    });
+    saveSession({ ...data, name });
+    recovering = false;
+    connect();
+  } catch (error) {
+    recovering = false;
+    if (error.status === 404) {
+      const oldCode = session?.code || '';
+      saveSession(null);
+      state = null;
+      renderLanding(`部屋 ${oldCode} は終了しました。新しい部屋へ参加してください。`);
+    } else if (error.status === 401 || error.status === 409) {
+      saveSession(null);
+      state = null;
+      renderLanding(error.message);
+    } else {
+      scheduleReconnect();
+    }
+  }
 }
 
 function connect() {
@@ -60,13 +113,14 @@ function connect() {
     const next = JSON.parse(event.data);
     if (!state || next.roundNumber !== state.roundNumber || next.phase !== state.phase) selectedVotes = new Set();
     state = next;
+    const me = next.players.find((player) => player.id === next.viewerId);
+    if (me && session && session.name !== me.name) saveSession({ ...session, name: me.name });
     render();
   });
   eventSource.onerror = () => {
     if (eventSource && eventSource.readyState === EventSource.CLOSED) {
-      saveSession(null);
-      state = null;
-      renderLanding('部屋との接続が終了しました');
+      eventSource = null;
+      scheduleReconnect();
     }
   };
 }
@@ -98,7 +152,7 @@ function renderLanding(message = '') {
       ${message ? `<p class="fine-print">${escapeHtml(message)}</p>` : ''}
       <form id="landingForm" class="stack">
         <label class="label">あなたのニックネーム
-          <input class="input" name="name" minlength="2" maxlength="10" autocomplete="nickname" placeholder="例：みどり" required>
+          <input class="input" name="name" minlength="2" maxlength="10" autocomplete="nickname" placeholder="例：みどり" value="${escapeHtml(savedNickname())}" required>
         </label>
         <button class="button" id="createRoom" type="button">部屋をつくる</button>
         <div class="divider">または</div>
@@ -151,7 +205,7 @@ function playerRows(players, mode = '') {
     <div class="player-row">
       <div class="player-name"><span class="avatar">${avatars[index % avatars.length]}</span><span>${escapeHtml(player.name)}${player.id === state.viewerId ? '（あなた）' : ''}</span></div>
       <span class="status ${player.ready || player.submitted ? 'ready' : ''}">
-        ${player.isHost ? '進行役' : mode === 'ready' ? (player.ready ? '確認済み' : '確認中') : mode === 'vote' ? (player.submitted ? '予想済み' : '考え中') : ''}
+        ${player.waiting ? '次のラウンドから参加' : player.isHost ? '進行役' : mode === 'ready' ? (player.ready ? '確認済み' : '確認中') : mode === 'vote' ? (player.submitted ? '予想済み' : '考え中') : ''}
       </span>
     </div>`).join('');
 }
@@ -175,7 +229,7 @@ function renderLobby() {
 
 function renderTopic() {
   const me = state.players.find((player) => player.id === state.viewerId);
-  const allReady = state.players.every((player) => player.ready);
+  const allReady = state.players.filter((player) => player.active).every((player) => player.ready);
   const revealed = topicRevealedRound === state.roundNumber;
   app.innerHTML = `
     <section class="screen">
@@ -202,6 +256,22 @@ function renderTopic() {
   document.querySelector('#startTalk')?.addEventListener('click', () => sendAction('start_talk'));
 }
 
+function renderWaiting() {
+  app.innerHTML = `
+    <section class="screen">
+      <div class="screen-head">
+        <span class="pill">参加できました</span>
+        <h2>次のラウンドから参加できます</h2>
+        <p>いまのラウンドが終わるまで、この画面で待っていてください。画面を閉じても、同じニックネームで部屋に戻れます。</p>
+      </div>
+      <div class="room-code-panel"><p>部屋コード</p><strong class="big-code">${state.code}</strong></div>
+      <section class="card stack">
+        <div class="player-list">${playerRows(state.players)}</div>
+        <div class="waiting"><div class="dots"><i></i><i></i><i></i></div><span>いまのラウンドを待っています</span></div>
+      </section>
+    </section>`;
+}
+
 function renderTalk() {
   const last = state.questionIndex === state.questionTotal - 1;
   app.innerHTML = `
@@ -222,15 +292,16 @@ function renderTalk() {
 
 function renderVote() {
   const me = state.players.find((player) => player.id === state.viewerId);
-  const submittedCount = state.players.filter((player) => player.submitted).length;
+  const roundPlayers = state.players.filter((player) => player.active);
+  const submittedCount = roundPlayers.filter((player) => player.submitted).length;
   const required = state.minorityTotal;
   if (me.submitted) {
     app.innerHTML = `
       <section class="screen">
-        <div class="screen-head"><span class="pill">予想タイム</span><h2>予想を受け付けました</h2><p>${submittedCount} / ${state.players.length}人が予想済みです。</p></div>
-        <section class="card"><div class="player-list">${playerRows(state.players, 'vote')}</div></section>
+        <div class="screen-head"><span class="pill">予想タイム</span><h2>予想を受け付けました</h2><p>${submittedCount} / ${roundPlayers.length}人が予想済みです。</p></div>
+        <section class="card"><div class="player-list">${playerRows(roundPlayers, 'vote')}</div></section>
         ${state.isHost
-          ? `<button class="button" id="revealResults" ${submittedCount === state.players.length ? '' : 'disabled'}>結果を発表</button>`
+          ? `<button class="button" id="revealResults" ${submittedCount === roundPlayers.length ? '' : 'disabled'}>結果を発表</button>`
           : '<div class="waiting"><div class="dots"><i></i><i></i><i></i></div><span>みんなの予想を待っています</span></div>'}
       </section>`;
     document.querySelector('#revealResults')?.addEventListener('click', () => sendAction('reveal_results'));
@@ -246,7 +317,7 @@ function renderVote() {
       </section>
       <p class="selection-note">違うお題だと思う人を${required}人選んでください。自分も選べます。</p>
       <div class="select-grid">
-        ${state.players.map((player) => `<button class="person-select ${selectedVotes.has(player.id) ? 'selected' : ''}" data-player-id="${player.id}">${escapeHtml(player.name)}${player.id === state.viewerId ? '<br><small>あなた</small>' : ''}</button>`).join('')}
+        ${roundPlayers.map((player) => `<button class="person-select ${selectedVotes.has(player.id) ? 'selected' : ''}" data-player-id="${player.id}">${escapeHtml(player.name)}${player.id === state.viewerId ? '<br><small>あなた</small>' : ''}</button>`).join('')}
       </div>
       <button class="button" id="submitVote" ${selectedVotes.size === required ? '' : 'disabled'}>この${required}人で決定</button>
     </section>`;
@@ -261,8 +332,9 @@ function renderVote() {
 }
 
 function renderResults() {
+  const roundPlayers = state.players.filter((player) => player.active);
   const maxVotes = Math.max(1, ...Object.values(state.results.tally));
-  const minorityNames = state.players.filter((player) => state.results.minorityIds.includes(player.id));
+  const minorityNames = roundPlayers.filter((player) => state.results.minorityIds.includes(player.id));
   app.innerHTML = `
     <section class="screen">
       <div class="screen-head"><span class="pill">ラウンド ${state.roundNumber} 結果</span><h2>違うお題だったのは…</h2></div>
@@ -274,7 +346,7 @@ function renderResults() {
         </div>
         <h3>みんなの予想</h3>
         <div class="tally-list">
-          ${[...state.players].sort((a, b) => state.results.tally[b.id] - state.results.tally[a.id]).map((player) => {
+          ${[...roundPlayers].sort((a, b) => state.results.tally[b.id] - state.results.tally[a.id]).map((player) => {
             const votes = state.results.tally[player.id];
             return `<div class="tally-row"><span class="tally-name">${escapeHtml(player.name)}</span><div class="bar-track"><div class="bar-fill" style="width:${votes / maxVotes * 100}%"></div></div><span class="tally-number">${votes}</span></div>`;
           }).join('')}
@@ -315,6 +387,7 @@ function render() {
   setRoomBadge(state.code);
   const renderers = {
     lobby: renderLobby,
+    waiting: renderWaiting,
     topic: renderTopic,
     talk: renderTalk,
     vote: renderVote,

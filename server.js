@@ -31,20 +31,27 @@ function normalizeName(value) {
 function createPlayer(name, isHost = false) {
   return {
     id: randomId(8), token: randomId(18), name, isHost,
-    ready: false, submitted: false, votes: [], minorityCount: 0
+    ready: false, submitted: false, votes: [], minorityCount: 0, waiting: false
   };
+}
+
+function activePlayers(room) {
+  if (!room.round) return room.players;
+  return room.players.filter((player) => room.round.activePlayerIds.includes(player.id));
 }
 
 function roomPublicState(room, viewer) {
   const round = room.round;
   const isResults = room.phase === 'results';
-  const ownTopic = round && ['topic', 'talk', 'vote', 'results'].includes(room.phase)
+  const isWaiting = Boolean(viewer.waiting && round && !round.activePlayerIds.includes(viewer.id));
+  const ownTopic = round && !isWaiting && ['topic', 'talk', 'vote', 'results'].includes(room.phase)
     ? (round.minorityIds.includes(viewer.id) ? round.minorityTopic : round.majorityTopic)
     : null;
 
   return {
     code: room.code,
-    phase: room.phase,
+    phase: isWaiting ? 'waiting' : room.phase,
+    roomPhase: room.phase,
     roundNumber: room.roundNumber,
     viewerId: viewer.id,
     isHost: viewer.isHost,
@@ -53,22 +60,25 @@ function roomPublicState(room, viewer) {
       name: player.name,
       isHost: player.isHost,
       ready: player.ready,
-      submitted: player.submitted
+      submitted: player.submitted,
+      waiting: player.waiting,
+      active: !round || round.activePlayerIds.includes(player.id)
     })),
     ownTopic,
     category: round ? round.category : null,
     question: round && room.phase === 'talk' ? round.questions[round.questionIndex] : null,
     questionIndex: round ? round.questionIndex : 0,
     questionTotal: round ? round.questions.length : 0,
-    minorityTotal: round && ['vote', 'results'].includes(room.phase) ? round.minorityIds.length : null,
-    results: isResults ? buildResults(room) : null,
+    minorityTotal: round && !isWaiting && ['vote', 'results'].includes(room.phase) ? round.minorityIds.length : null,
+    results: isResults && !isWaiting ? buildResults(room) : null,
     createdAt: room.createdAt
   };
 }
 
 function buildResults(room) {
-  const tally = Object.fromEntries(room.players.map((player) => [player.id, 0]));
-  for (const player of room.players) {
+  const roundPlayers = activePlayers(room);
+  const tally = Object.fromEntries(roundPlayers.map((player) => [player.id, 0]));
+  for (const player of roundPlayers) {
     for (const votedId of player.votes) {
       if (Object.hasOwn(tally, votedId)) tally[votedId] += 1;
     }
@@ -78,7 +88,7 @@ function buildResults(room) {
     minorityTopic: room.round.minorityTopic,
     minorityIds: room.round.minorityIds,
     tally,
-    submittedCount: room.players.filter((player) => player.submitted).length
+    submittedCount: roundPlayers.filter((player) => player.submitted).length
   };
 }
 
@@ -137,6 +147,7 @@ function pickQuestions(pair, count = 3) {
 }
 
 function prepareRound(room) {
+  for (const player of room.players) player.waiting = false;
   const pair = selectTopicPair(room);
   const swap = crypto.randomInt(2) === 1;
   const minorityTotal = chooseMinorityTotal(room.players.length);
@@ -154,6 +165,7 @@ function prepareRound(room) {
     majorityTopic: swap ? pair.b : pair.a,
     minorityTopic: swap ? pair.a : pair.b,
     minorityIds: room.lastMinorityIds,
+    activePlayerIds: room.players.map((player) => player.id),
     questions: pickQuestions(pair),
     questionIndex: 0
   };
@@ -197,12 +209,13 @@ function handleAction(room, player, action, payload) {
       break;
     case 'ready':
       if (room.phase !== 'topic') throw new Error('今は準備確認できません');
+      if (player.waiting) throw new Error('次のラウンドから参加できます');
       player.ready = true;
       break;
     case 'start_talk':
       requireHost(player);
       if (room.phase !== 'topic') throw new Error('今は会話を開始できません');
-      if (!room.players.every((candidate) => candidate.ready)) throw new Error('全員のお題確認を待っています');
+      if (!activePlayers(room).every((candidate) => candidate.ready)) throw new Error('全員のお題確認を待っています');
       room.phase = 'talk';
       break;
     case 'next_question':
@@ -218,9 +231,10 @@ function handleAction(room, player, action, payload) {
       break;
     case 'submit_vote': {
       if (room.phase !== 'vote') throw new Error('今は予想できません');
+      if (player.waiting) throw new Error('次のラウンドから参加できます');
       const ids = Array.isArray(payload.ids) ? [...new Set(payload.ids)] : [];
       if (ids.length !== room.round.minorityIds.length) throw new Error(`${room.round.minorityIds.length}人選んでください`);
-      if (ids.some((id) => !room.players.some((candidate) => candidate.id === id))) throw new Error('参加者を選び直してください');
+      if (ids.some((id) => !room.round.activePlayerIds.includes(id))) throw new Error('参加者を選び直してください');
       player.votes = ids;
       player.submitted = true;
       break;
@@ -228,7 +242,7 @@ function handleAction(room, player, action, payload) {
     case 'reveal_results':
       requireHost(player);
       if (room.phase !== 'vote') throw new Error('今は結果を発表できません');
-      if (!room.players.every((candidate) => candidate.submitted)) throw new Error('全員の予想を待っています');
+      if (!activePlayers(room).every((candidate) => candidate.submitted)) throw new Error('全員の予想を待っています');
       room.phase = 'results';
       break;
     case 'end_room':
@@ -272,7 +286,7 @@ const server = http.createServer(async (req, res) => {
         createdAt: Date.now(), updatedAt: Date.now()
       };
       rooms.set(code, room);
-      return json(res, 201, { code, playerId: host.id, token: host.token });
+      return json(res, 201, { code, playerId: host.id, token: host.token, name: host.name });
     }
 
     if (req.method === 'POST' && pathname === '/api/rooms/join') {
@@ -281,14 +295,25 @@ const server = http.createServer(async (req, res) => {
       const name = normalizeName(body.name);
       const room = rooms.get(code);
       if (!room || room.phase === 'ended') return json(res, 404, { error: '部屋が見つかりません' });
-      if (room.phase !== 'lobby') return json(res, 409, { error: 'この部屋はすでにゲーム中です' });
-      if (room.players.length >= 10) return json(res, 409, { error: 'この部屋は満員です' });
       if (name.length < 2) return json(res, 400, { error: 'ニックネームを2文字以上で入力してください' });
-      if (room.players.some((player) => player.name === name)) return json(res, 409, { error: '同じニックネームの人がいます' });
+      const existing = room.players.find((player) => player.name === name);
+      if (existing) {
+        for (const client of [...room.clients]) {
+          if (client.playerId === existing.id) {
+            client.res.end();
+            room.clients.delete(client);
+          }
+        }
+        existing.token = randomId(18);
+        sendEvent(room);
+        return json(res, 200, { code, playerId: existing.id, token: existing.token, name: existing.name, resumed: true });
+      }
+      if (room.players.length >= 10) return json(res, 409, { error: 'この部屋は満員です' });
       const player = createPlayer(name);
+      player.waiting = room.phase !== 'lobby';
       room.players.push(player);
       sendEvent(room);
-      return json(res, 201, { code, playerId: player.id, token: player.token });
+      return json(res, 201, { code, playerId: player.id, token: player.token, name: player.name, waiting: player.waiting });
     }
 
     const eventsMatch = pathname.match(/^\/api\/rooms\/(\d{4})\/events$/);

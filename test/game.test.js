@@ -103,3 +103,41 @@ test('少数派人数と違う人数は選択できない', async () => {
   );
   await action(code, guest2, 'submit_vote', { ids: [rooms.get(code).players[0].id] });
 });
+
+test('同じ名前で席に戻り、途中参加者は次のラウンドから遊べる', async () => {
+  const host = await post('/api/rooms', { name: 'ホスト' });
+  const code = host.code;
+  const guest1 = await post('/api/rooms/join', { code, name: 'ゲスト一' });
+  const guest2 = await post('/api/rooms/join', { code, name: 'ゲスト二' });
+  const room = rooms.get(code);
+
+  await action(code, host, 'start_round');
+  const firstRoundIds = [...room.round.activePlayerIds];
+
+  const latePlayer = await post('/api/rooms/join', { code, name: '途中参加' });
+  assert.equal(latePlayer.waiting, true);
+  assert.equal(room.players.find((player) => player.id === latePlayer.playerId).waiting, true);
+  assert.deepEqual(room.round.activePlayerIds, firstRoundIds);
+
+  const resumedHost = await post('/api/rooms/join', { code, name: 'ホスト' });
+  assert.equal(resumedHost.resumed, true);
+  assert.equal(resumedHost.playerId, host.playerId);
+  assert.notEqual(resumedHost.token, host.token);
+
+  const activePlayers = [resumedHost, guest1, guest2];
+  for (const player of activePlayers) await action(code, player, 'ready');
+  await action(code, resumedHost, 'start_talk');
+  await action(code, resumedHost, 'start_vote');
+
+  const suspectedId = room.round.minorityIds[0];
+  for (const player of activePlayers) {
+    await action(code, player, 'submit_vote', { ids: [suspectedId] });
+  }
+  await action(code, resumedHost, 'reveal_results');
+  assert.equal(room.phase, 'results');
+
+  await action(code, resumedHost, 'start_round');
+  assert.equal(room.phase, 'topic');
+  assert.equal(room.players.find((player) => player.id === latePlayer.playerId).waiting, false);
+  assert.ok(room.round.activePlayerIds.includes(latePlayer.playerId));
+});
