@@ -96,42 +96,44 @@ function renderLanding(message = '') {
     </section>
     <section class="card stack">
       ${message ? `<p class="fine-print">${escapeHtml(message)}</p>` : ''}
-      <form id="createForm" class="stack">
+      <form id="landingForm" class="stack">
         <label class="label">あなたのニックネーム
           <input class="input" name="name" minlength="2" maxlength="10" autocomplete="nickname" placeholder="例：みどり" required>
         </label>
-        <button class="button" type="submit">部屋をつくる</button>
-      </form>
-      <div class="divider">または</div>
-      <form id="joinForm" class="stack">
+        <button class="button" id="createRoom" type="button">部屋をつくる</button>
+        <div class="divider">または</div>
         <label class="label">4桁の部屋コード
           <input class="input code-input" name="code" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" placeholder="0000" required>
-        </label>
-        <label class="label">あなたのニックネーム
-          <input class="input" name="name" minlength="2" maxlength="10" autocomplete="nickname" placeholder="例：みどり" required>
         </label>
         <button class="button secondary" type="submit">部屋に入る</button>
       </form>
     </section>`;
 
-  document.querySelector('#createForm').addEventListener('submit', async (event) => {
-    event.preventDefault();
-    const button = event.currentTarget.querySelector('button');
-    button.disabled = true;
+  const landingForm = document.querySelector('#landingForm');
+  const nicknameInput = landingForm.querySelector('input[name="name"]');
+  const createButton = document.querySelector('#createRoom');
+  const joinButton = landingForm.querySelector('button[type="submit"]');
+  const setPending = (pending) => {
+    createButton.disabled = pending;
+    joinButton.disabled = pending;
+  };
+
+  createButton.addEventListener('click', async () => {
+    if (!nicknameInput.reportValidity()) return;
+    setPending(true);
     try {
-      const name = new FormData(event.currentTarget).get('name');
+      const name = nicknameInput.value;
       const data = await request('/api/rooms', { method: 'POST', body: JSON.stringify({ name }) });
       saveSession(data);
       connect();
-    } catch (error) { showToast(error.message); button.disabled = false; }
+    } catch (error) { showToast(error.message); setPending(false); }
   });
 
-  const codeInput = document.querySelector('#joinForm input[name="code"]');
+  const codeInput = landingForm.querySelector('input[name="code"]');
   codeInput.addEventListener('input', () => { codeInput.value = codeInput.value.replace(/\D/g, '').slice(0, 4); });
-  document.querySelector('#joinForm').addEventListener('submit', async (event) => {
+  landingForm.addEventListener('submit', async (event) => {
     event.preventDefault();
-    const button = event.currentTarget.querySelector('button');
-    button.disabled = true;
+    setPending(true);
     try {
       const form = new FormData(event.currentTarget);
       const data = await request('/api/rooms/join', {
@@ -140,7 +142,7 @@ function renderLanding(message = '') {
       });
       saveSession(data);
       connect();
-    } catch (error) { showToast(error.message); button.disabled = false; }
+    } catch (error) { showToast(error.message); setPending(false); }
   });
 }
 
