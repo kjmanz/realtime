@@ -276,7 +276,7 @@ function renderTalk() {
   const last = state.questionIndex === state.questionTotal - 1;
   app.innerHTML = `
     <section class="screen">
-      <div class="screen-head"><span class="pill">ラウンド ${state.roundNumber}</span><h2>自由に話そう</h2><p>お題そのものは言わずに、質問について話してください。</p></div>
+      <div class="screen-head"><span class="pill topic-reminder">ラウンド ${state.roundNumber}<strong>あなたのお題：${escapeHtml(state.ownTopic)}</strong></span><h2>自由に話そう</h2><p>お題そのものは言わずに、質問について話してください。</p></div>
       <div class="progress">${Array.from({ length: state.questionTotal }, (_, index) => `<i class="progress-dot ${index <= state.questionIndex ? 'active' : ''}"></i>`).join('')}</div>
       <section class="card question-card">
         <p class="question-number">質問 ${state.questionIndex + 1} / ${state.questionTotal}</p>
@@ -298,7 +298,7 @@ function renderVote() {
   if (me.submitted) {
     app.innerHTML = `
       <section class="screen">
-        <div class="screen-head"><span class="pill">予想タイム</span><h2>予想を受け付けました</h2><p>${submittedCount} / ${roundPlayers.length}人が予想済みです。</p></div>
+        <div class="screen-head"><span class="pill topic-reminder">ラウンド ${state.roundNumber}<strong>あなたのお題：${escapeHtml(state.ownTopic)}</strong></span><h2>予想を受け付けました</h2><p>${submittedCount} / ${roundPlayers.length}人が予想済みです。</p></div>
         <section class="card"><div class="player-list">${playerRows(roundPlayers, 'vote')}</div></section>
         ${state.isHost
           ? `<button class="button" id="revealResults" ${submittedCount === roundPlayers.length ? '' : 'disabled'}>結果を発表</button>`
@@ -310,7 +310,7 @@ function renderVote() {
 
   app.innerHTML = `
     <section class="screen">
-      <div class="screen-head"><span class="pill">予想タイム</span><h2>違うお題の人は…</h2></div>
+      <div class="screen-head"><span class="pill topic-reminder">ラウンド ${state.roundNumber}<strong>あなたのお題：${escapeHtml(state.ownTopic)}</strong></span><h2>違うお題の人は…</h2></div>
       <section class="card count-reveal">
         <span class="count-number">${required}</span>
         <span class="count-label">人います！</span>

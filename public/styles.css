@@ -127,6 +127,8 @@ h3 { margin: 0; font-size: 18px; }
 .screen-head { display: grid; gap: 7px; text-align: center; padding: 12px 6px 0; }
 .screen-head p { margin: 0; color: var(--muted); line-height: 1.6; }
 .pill { width: fit-content; margin: 0 auto; padding: 6px 11px; border-radius: 999px; background: var(--green-soft); color: var(--green-dark); font-size: 13px; font-weight: 800; }
+.topic-reminder { display: inline-flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 3px 9px; padding: 8px 14px; border-radius: 16px; }
+.topic-reminder strong { font-size: 14px; color: var(--ink); }
 
 .room-code-panel { text-align: center; padding: 24px; background: var(--green-soft); border-radius: 20px; }
 .room-code-panel p { margin: 0 0 5px; color: var(--green-dark); font-weight: 700; }
